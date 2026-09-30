@@ -11,11 +11,31 @@
 #include <chrono>
 #include <iomanip>
 #include <fstream>
+#include <cctype>
 #include <boost/multiprecision/cpp_int.hpp>
 #include "BoostReference.h"
+#include "Random512.h"
 
 using namespace std;
 using boost::multiprecision::cpp_int;
+const string RANDOM_TOKEN = "RAND512";
+
+bool commandExists(const string& commandName)
+{
+    string command = "command -v " + commandName + " >/dev/null 2>&1";
+    return system(command.c_str()) == 0;
+}
+
+string normalizeInputToken(const string& value)
+{
+    string normalized;
+    normalized.reserve(value.size());
+
+    for (char c : value)
+        normalized.push_back(toupper(static_cast<unsigned char>(c)));
+
+    return normalized;
+}
 
 string runCommand(const string& command)
 {
@@ -86,6 +106,12 @@ void showMessage(const string& title, const string& message)
 
 void showError(const string& message)
 {
+    if (!commandExists("zenity"))
+    {
+        cerr << "Input Error: " << message << endl;
+        return;
+    }
+
     string command =
         "zenity --error --title='Input Error' --text=" +
         shellEscape(message);
@@ -98,7 +124,7 @@ bool getNumbers(string& a, string& b)
     string command =
         "zenity --forms "
         "--title='Big Integer Calculator' "
-        "--text='Enter two integers' "
+        "--text='Enter two integers. Type RAND512 in any field to generate a secure 512-bit value.' "
         "--width=550 "
         "--add-entry='Number 1' "
         "--add-entry='Number 2'";
@@ -133,7 +159,7 @@ bool getThreeNumbers(string& a, string& e, string& m)
     string command =
         "zenity --forms "
         "--title='Modular Exponentiation' "
-        "--text='Enter base, exponent and modulus' "
+        "--text='Enter base, exponent and modulus. Type RAND512 in any field to generate a secure 512-bit value.' "
         "--width=550 "
         "--add-entry='Base (a)' "
         "--add-entry='Exponent (e)' "
@@ -164,6 +190,24 @@ bool getThreeNumbers(string& a, string& e, string& m)
         return false;
     }
 
+    return true;
+}
+
+bool replaceRandomToken(string& value)
+{
+    if (normalizeInputToken(value) != RANDOM_TOKEN)
+        return true;
+
+    string generatedValue;
+    string errorMessage;
+
+    if (!generateSecureRandom512Decimal(generatedValue, errorMessage))
+    {
+        showError(errorMessage);
+        return false;
+    }
+
+    value = generatedValue;
     return true;
 }
 
@@ -404,6 +448,12 @@ void calculateSquareAndMultiply(
 
 int main()
 {
+    if (!commandExists("zenity"))
+    {
+        cerr << "Zenity is required but was not found. Please install zenity and run again." << endl;
+        return 1;
+    }
+
     while (true)
     {
         string operation = runCommand(
@@ -430,6 +480,13 @@ int main()
 
             if (!getThreeNumbers(baseText, exponentText, modulusText))
                 continue;
+
+            if (!replaceRandomToken(baseText) ||
+                !replaceRandomToken(exponentText) ||
+                !replaceRandomToken(modulusText))
+            {
+                continue;
+            }
 
             try
             {
@@ -459,6 +516,9 @@ int main()
         string aText, bText;
 
         if (!getNumbers(aText, bText))
+            continue;
+
+        if (!replaceRandomToken(aText) || !replaceRandomToken(bText))
             continue;
 
         try
